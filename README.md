@@ -3,6 +3,7 @@
 2. Use some debug tools to debug performance and power problem.
 3. Summary debug case methods and document.
 4. Summary study document.
+
 当前添加的计划以及实现情况如下：
 1. 熟悉各个结构体元素是如何计算的，如struct cfs_rq,struct sched_entity,struct rq等等-----processing
 2. 系统PELT(Per Entity Load Tracking)-----done
