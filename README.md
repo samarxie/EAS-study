@@ -6,7 +6,7 @@
 
 当前添加的计划以及实现情况如下：
 1. 对于WALT study完毕
-2. governor,shcedutil/schedfreq governor学习完毕
+2. governor,shcedutil/schedfreq governor学习完毕,添加一些trace event来跟踪freq的变化
 3. cfs调度算法---完成70% 在文件scheduler-study中
 4. sched domain学习9.10开始,是负载均衡的关键
 
