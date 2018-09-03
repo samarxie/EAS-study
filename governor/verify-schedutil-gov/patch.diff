@@ -1,0 +1,125 @@
+diff --git a/include/trace/events/power.h b/include/trace/events/power.h
+index 8924cc2..afe706f1 100644
+--- a/include/trace/events/power.h
++++ b/include/trace/events/power.h
+@@ -145,6 +145,64 @@ TRACE_EVENT(cpu_frequency_limits,
+ 		  (unsigned long)__entry->cpu_id)
+ );
+ 
++TRACE_EVENT(get_cpu_freq_util_info,
++
++	TP_PROTO(unsigned int cpu_id, unsigned int freq,
++		unsigned long util, unsigned long max,
++		unsigned int select_freq),
++
++	TP_ARGS(cpu_id, freq, util, max, select_freq),
++
++	TP_STRUCT__entry(
++		__field(	u32,		cpu_id		)
++		__field(	u32,		freq		)
++		__field(	u64,		util		)
++		__field(	u64,		max			)
++		__field(	u32,		select_freq	)
++	),
++
++	TP_fast_assign(
++		__entry->cpu_id = cpu_id;
++		__entry->freq = freq;
++		__entry->util = util;
++		__entry->max = max;
++		__entry->select_freq = select_freq;
++	),
++
++	TP_printk("cpu_id=%lu freq=%lu util=%lu max=%lu select_freq=%lu",
++		  (unsigned long)__entry->cpu_id,
++		  (unsigned long)__entry->freq,
++		  (unsigned long)__entry->util,
++		  (unsigned long)__entry->max,
++		  (unsigned long)__entry->select_freq)
++);
++
++
++TRACE_EVENT(change_cpu_freq,
++
++	TP_PROTO(unsigned int next_freq, unsigned int cpu_id),
++
++	TP_ARGS(next_freq, cpu_id),
++
++	TP_STRUCT__entry(
++		__field(	u32,		next_freq		)
++		__field(	u32,		cpu_id			)
++	),
++
++	TP_fast_assign(
++		__entry->next_freq = next_freq;
++		__entry->cpu_id = cpu_id;
++	),
++
++	TP_printk("next_freq=%lu cpu_id=%lu",
++		  (unsigned long)__entry->next_freq,
++		  (unsigned long)__entry->cpu_id)
++);
++
++
++
++
++
+ DEFINE_EVENT(cpu, cpu_capacity,
+ 
+ 	TP_PROTO(unsigned int capacity, unsigned int cpu_id),
+diff --git a/kernel/sched/cpufreq_schedutil.c b/kernel/sched/cpufreq_schedutil.c
+index 623d696..4aaa78f 100644
+--- a/kernel/sched/cpufreq_schedutil.c
++++ b/kernel/sched/cpufreq_schedutil.c
+@@ -208,9 +208,12 @@ static void sugov_update_commit(struct sugov_policy *sg_policy, u64 time,
+  * next_freq (as calculated above) is returned, subject to policy min/max and
+  * cpufreq driver limitations.
+  */
+-static unsigned int get_next_freq(struct sugov_policy *sg_policy,
+-				  unsigned long util, unsigned long max)
++static unsigned int get_next_freq(struct sugov_cpu *sg_cpu,
++	struct sugov_policy *sg_policy, unsigned long util, unsigned long max)
+ {
++	unsigned int select_freq = 0;
++
++//	struct sugov_cpu  *sg_cpu = container_of(sg_policy, struct sugov_cpu, sg_policy);
+ 	struct cpufreq_policy *policy = sg_policy->policy;
+ 	unsigned int freq = arch_scale_freq_invariant() ?
+ 				policy->cpuinfo.max_freq : policy->cur;
+@@ -228,7 +231,9 @@ static unsigned int get_next_freq(struct sugov_policy *sg_policy,
+ 	if (freq == sg_policy->cached_raw_freq && sg_policy->next_freq != UINT_MAX)
+ 		return sg_policy->next_freq;
+ 	sg_policy->cached_raw_freq = freq;
+-	return cpufreq_driver_resolve_freq(policy, freq);
++	select_freq = cpufreq_driver_resolve_freq(policy, freq);
++	trace_get_cpu_freq_util_info(sg_cpu->cpu, freq, util, max, select_freq);
++	return select_freq;
+ }
+ 
+ static inline bool use_pelt(void)
+@@ -353,7 +358,7 @@ static void sugov_update_single(struct update_util_data *hook, u64 time,
+ 	} else {
+ 		sugov_get_util(&util, &max, time, sg_cpu->cpu);
+ 		sugov_iowait_boost(sg_cpu, &util, &max);
+-		next_f = get_next_freq(sg_policy, util, max);
++		next_f = get_next_freq(sg_cpu, sg_policy, util, max);
+ 		/*
+ 		 * Do not reduce the frequency if the CPU has not been idle
+ 		 * recently, as the reduction is likely to be premature then.
+@@ -427,7 +432,7 @@ static unsigned int sugov_next_freq_shared(struct sugov_cpu *sg_cpu, u64 time)
+ 		sugov_iowait_boost(j_sg_cpu, &util, &max);
+ 	}
+ 
+-	return get_next_freq(sg_policy, util, max);
++	return get_next_freq(sg_cpu, sg_policy, util, max);
+ }
+ 
+ static void sugov_update_shared(struct update_util_data *hook, u64 time,
+@@ -477,6 +482,7 @@ static void sugov_work(struct kthread_work *work)
+ 	mutex_unlock(&sg_policy->work_lock);
+ 
+ 	sg_policy->work_in_progress = false;
++	trace_change_cpu_freq(sg_policy->next_freq, smp_processor_id());
+ }
+ 
+ static void sugov_irq_work(struct irq_work *irq_work)
